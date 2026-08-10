@@ -1,0 +1,21 @@
+{
+  "nodos": {
+    "A": [42.6650, -8.1120],
+    "B": [42.6630, -8.1180],
+    "C": [42.6600, -8.1250],
+    "D": [42.6152, -8.1353],
+    "E": [42.6620, -8.1100]
+  },
+  "tuberias": [
+    {"id": "P1", "a": "A", "b": "B"},
+    {"id": "P2", "a": "B", "b": "C"},
+    {"id": "P3", "a": "C", "b": "D"},
+    {"id": "P4", "a": "C", "b": "E"}
+  ],
+  "valvulas": [
+    {"id": "V1", "tuberia": "P1", "nodo": "A", "estado": "abierta", "nombre": "Deposito", "lat": 42.6650, "lng": -8.1120},
+    {"id": "V2", "tuberia": "P2", "nodo": "B", "estado": "abierta", "nombre": "Cruce Areal", "lat": 42.6630, "lng": -8.1180},
+    {"id": "V3", "tuberia": "P4", "nodo": "C", "estado": "abierta", "nombre": "Ramal Este", "lat": 42.6600, "lng": -8.1250},
+    {"id": "V4", "tuberia": "P3", "nodo": "D", "estado": "cerrada", "nombre": "Vilanova", "lat": 42.6152, "lng": -8.1353}
+  ]
+}

@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Simulador · Llaves de corte</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #e2e8f0; padding: 12px; }
+  .wrap { max-width: 440px; margin: 0 auto; }
+  h1 { font-size: 17px; margin-bottom: 2px; }
+  .sub { font-size: 12px; color: #94a3b8; margin-bottom: 10px; }
+
+  .hint {
+    background: #1e293b; border-left: 3px solid #22c55e; border-radius: 6px;
+    padding: 8px 10px; font-size: 13px; margin-bottom: 10px; min-height: 38px;
+    display: flex; align-items: center;
+  }
+
+  .mapbox { background: #e9ede8; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 14px rgba(0,0,0,.4); touch-action: manipulation; }
+  svg { display: block; width: 100%; height: auto; }
+
+  .toolbar { display: flex; gap: 6px; margin: 10px 0; }
+  .btn { flex: 1; padding: 12px 6px; border: none; border-radius: 9px; font-size: 13px; font-weight: 600; color: #fff; cursor: pointer; }
+  .btn-green { background: #16a34a; }
+  .btn-slate { background: #334155; }
+
+  .section-title { font-size: 12px; color: #94a3b8; text-transform: uppercase; letter-spacing: .5px; margin: 10px 0 6px; }
+  .averias { display: flex; gap: 6px; flex-wrap: wrap; }
+  .av-btn { padding: 9px 12px; border: 1px solid #475569; background: #1e293b; color: #fca5a5; border-radius: 999px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .av-btn:active { background: #7f1d1d; }
+
+  .legend { display: flex; gap: 14px; font-size: 12px; color: #94a3b8; margin-top: 12px; flex-wrap: wrap; }
+  .legend span { display: flex; align-items: center; gap: 5px; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+
+  /* form modal */
+  .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; align-items: center; justify-content: center; padding: 16px; z-index: 50; }
+  .modal-bg.open { display: flex; }
+  .modal { background: #1e293b; border-radius: 14px; padding: 18px; width: 100%; max-width: 360px; }
+  .modal h3 { font-size: 16px; margin-bottom: 12px; }
+  .modal label { font-size: 12px; color: #94a3b8; display: block; margin: 8px 0 3px; }
+  .modal input, .modal select { width: 100%; padding: 10px; border-radius: 7px; border: 1px solid #475569; background: #0f172a; color: #e2e8f0; font-size: 15px; }
+  .modal-btns { display: flex; gap: 8px; margin-top: 14px; }
+
+  @keyframes pulse { 0%,100%{ opacity:1 } 50%{ opacity:.35 } }
+  @keyframes dash { to { stroke-dashoffset: -20; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🔧 Simulador — Llaves de corte</h1>
+  <div class="sub">Cómo funcionaría la app en campo · Lalín</div>
+
+  <div class="hint" id="hint">👆 Toca el plano para "moverte": simula tu ubicación GPS.</div>
+
+  <div class="mapbox">
+    <svg id="map" viewBox="0 0 400 460">
+      <!-- fondo verde claro -->
+      <rect x="0" y="0" width="400" height="460" fill="#dfe7dc"/>
+      <!-- manchas de aldeas -->
+      <g id="zonas"></g>
+      <!-- viales -->
+      <g stroke="#c3ccbe" stroke-width="16" stroke-linecap="round" fill="none">
+        <path d="M40,60 C120,120 120,260 200,320 S320,400 370,410"/>
+        <path d="M200,320 L300,220"/>
+        <path d="M120,190 L60,300"/>
+      </g>
+      <g stroke="#eef2ec" stroke-width="3" stroke-dasharray="8 8" fill="none">
+        <path d="M40,60 C120,120 120,260 200,320 S320,400 370,410"/>
+        <path d="M200,320 L300,220"/>
+        <path d="M120,190 L60,300"/>
+      </g>
+      <!-- capa de ruta -->
+      <g id="ruta"></g>
+      <!-- válvulas -->
+      <g id="valvulas"></g>
+      <!-- operario -->
+      <g id="operario">
+        <circle id="op-halo" cx="200" cy="230" r="14" fill="#22c55e" opacity="0.3"/>
+        <circle id="op-dot" cx="200" cy="230" r="8" fill="#16a34a" stroke="#fff" stroke-width="3"/>
+      </g>
+    </svg>
+  </div>
+
+  <div class="toolbar">
+    <button class="btn btn-green" onclick="abrirRegistro()">📍 Registrar válvula aquí</button>
+    <button class="btn btn-slate" onclick="reset()">↺ Reiniciar</button>
+  </div>
+
+  <div class="section-title">Simular avería en…</div>
+  <div class="averias" id="averias"></div>
+
+  <div class="legend">
+    <span><i class="dot" style="background:#2563eb"></i> Abierta</span>
+    <span><i class="dot" style="background:#dc2626"></i> Cerrada</span>
+    <span><i class="dot" style="background:#facc15"></i> A cerrar</span>
+    <span><i class="dot" style="background:#16a34a"></i> Operario (tú)</span>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal">
+  <div class="modal">
+    <h3>Nueva válvula en tu posición</h3>
+    <label>Aldea / calle</label>
+    <input id="f_nombre" placeholder="Ej: Vilanova">
+    <label>Estado</label>
+    <select id="f_estado"><option value="abierta">Abierta</option><option value="cerrada">Cerrada</option></select>
+    <label>¿Qué aísla?</label>
+    <input id="f_aisla" placeholder="Ej: Vilanova">
+    <div class="modal-btns">
+      <button class="btn btn-slate" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn btn-green" onclick="guardar()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const svg = document.getElementById('map');
+const NS = 'http://www.w3.org/2000/svg';
+
+// Zonas (aldeas)
+const zonas = [
+  { nombre: 'Vilanova', x: 85,  y: 315, r: 55 },
+  { nombre: 'O Areal',  x: 300, y: 210, r: 50 },
+  { nombre: 'Centro',   x: 90,  y: 110, r: 48 },
+];
+
+// Válvulas de ejemplo
+let valvulas = seed();
+function seed() {
+  return [
+    { id: 1, nombre: 'Vilanova', x: 120, y: 300, estado: 'abierta', aisla: 'Vilanova' },
+    { id: 2, nombre: 'O Areal',  x: 285, y: 230, estado: 'abierta', aisla: 'O Areal' },
+    { id: 3, nombre: 'Centro',   x: 110, y: 130, estado: 'cerrada', aisla: 'Centro' },
+  ];
+}
+
+let op = { x: 200, y: 230 };
+let capturada = null;
+
+function setHint(t) { document.getElementById('hint').innerHTML = t; }
+
+function dibujarZonas() {
+  const g = document.getElementById('zonas');
+  g.innerHTML = '';
+  zonas.forEach(z => {
+    const c = document.createElementNS(NS, 'circle');
+    c.setAttribute('cx', z.x); c.setAttribute('cy', z.y); c.setAttribute('r', z.r);
+    c.setAttribute('fill', '#c9d6c3'); c.setAttribute('opacity', '0.55');
+    g.appendChild(c);
+    const t = document.createElementNS(NS, 'text');
+    t.setAttribute('x', z.x); t.setAttribute('y', z.y - z.r - 4);
+    t.setAttribute('text-anchor', 'middle'); t.setAttribute('font-size', '12');
+    t.setAttribute('fill', '#475569'); t.setAttribute('font-weight', '600');
+    t.textContent = z.nombre;
+    g.appendChild(t);
+  });
+}
+
+function dibujarValvulas(resaltar = null) {
+  const g = document.getElementById('valvulas');
+  g.innerHTML = '';
+  valvulas.forEach(v => {
+    const color = v.estado === 'cerrada' ? '#dc2626' : '#2563eb';
+    const hl = resaltar && resaltar.includes(v.id);
+    if (hl) {
+      const ring = document.createElementNS(NS, 'circle');
+      ring.setAttribute('cx', v.x); ring.setAttribute('cy', v.y); ring.setAttribute('r', 17);
+      ring.setAttribute('fill', 'none'); ring.setAttribute('stroke', '#facc15'); ring.setAttribute('stroke-width', '4');
+      ring.style.animation = 'pulse 1s infinite';
+      g.appendChild(ring);
+    }
+    const c = document.createElementNS(NS, 'circle');
+    c.setAttribute('cx', v.x); c.setAttribute('cy', v.y); c.setAttribute('r', 11);
+    c.setAttribute('fill', color); c.setAttribute('stroke', '#fff'); c.setAttribute('stroke-width', '2.5');
+    c.style.cursor = 'pointer';
+    c.onclick = (e) => { e.stopPropagation(); trazarRuta([v]); setHint(`🧭 Ruta hasta <b>Válvula ${v.nombre}</b> (${v.estado}).`); };
+    g.appendChild(c);
+    const t = document.createElementNS(NS, 'text');
+    t.setAttribute('x', v.x); t.setAttribute('y', v.y + 24);
+    t.setAttribute('text-anchor', 'middle'); t.setAttribute('font-size', '10');
+    t.setAttribute('fill', '#334155'); t.setAttribute('font-weight', '600');
+    t.textContent = v.nombre;
+    g.appendChild(t);
+  });
+}
+
+function moverOperario(x, y) {
+  op = { x, y };
+  document.getElementById('op-dot').setAttribute('cx', x);
+  document.getElementById('op-dot').setAttribute('cy', y);
+  document.getElementById('op-halo').setAttribute('cx', x);
+  document.getElementById('op-halo').setAttribute('cy', y);
+}
+
+function trazarRuta(objetivos) {
+  const g = document.getElementById('ruta');
+  g.innerHTML = '';
+  objetivos.forEach(v => {
+    const line = document.createElementNS(NS, 'line');
+    line.setAttribute('x1', op.x); line.setAttribute('y1', op.y);
+    line.setAttribute('x2', v.x); line.setAttribute('y2', v.y);
+    line.setAttribute('stroke', '#0f172a'); line.setAttribute('stroke-width', '4');
+    line.setAttribute('stroke-dasharray', '10 6'); line.setAttribute('stroke-linecap', 'round');
+    line.style.animation = 'dash 1s linear infinite';
+    g.appendChild(line);
+    const dist = Math.round(Math.hypot(v.x - op.x, v.y - op.y) * 2.5); // metros aprox
+    const mx = (op.x + v.x) / 2, my = (op.y + v.y) / 2;
+    const bg = document.createElementNS(NS, 'rect');
+    bg.setAttribute('x', mx - 24); bg.setAttribute('y', my - 12); bg.setAttribute('width', 48); bg.setAttribute('height', 18);
+    bg.setAttribute('rx', 9); bg.setAttribute('fill', '#0f172a');
+    g.appendChild(bg);
+    const tx = document.createElementNS(NS, 'text');
+    tx.setAttribute('x', mx); tx.setAttribute('y', my + 1); tx.setAttribute('text-anchor', 'middle');
+    tx.setAttribute('font-size', '11'); tx.setAttribute('fill', '#fff'); tx.setAttribute('font-weight', '700');
+    tx.textContent = `~${dist} m`;
+    g.appendChild(tx);
+  });
+}
+
+// Toca el plano -> mueve al operario (simula GPS)
+svg.addEventListener('click', (e) => {
+  const pt = svg.createSVGPoint();
+  pt.x = e.clientX; pt.y = e.clientY;
+  const loc = pt.matrixTransform(svg.getScreenCTM().inverse());
+  moverOperario(loc.x, loc.y);
+  document.getElementById('ruta').innerHTML = '';
+  setHint('✅ Te has movido. Pulsa <b>Registrar válvula aquí</b> o simula una avería.');
+});
+
+// Averías
+function dibujarAverias() {
+  const g = document.getElementById('averias');
+  g.innerHTML = '';
+  [...new Set(valvulas.map(v => v.aisla).filter(Boolean))].forEach(zona => {
+    const b = document.createElement('button');
+    b.className = 'av-btn'; b.textContent = '⚠ ' + zona;
+    b.onclick = () => simularAveria(zona);
+    g.appendChild(b);
+  });
+}
+
+function simularAveria(zona) {
+  const afectadas = valvulas.filter(v => (v.aisla || '') === zona);
+  if (!afectadas.length) return;
+  // la más cercana al operario
+  afectadas.sort((a, b) => Math.hypot(a.x-op.x, a.y-op.y) - Math.hypot(b.x-op.x, b.y-op.y));
+  const objetivo = afectadas[0];
+  dibujarValvulas(afectadas.map(v => v.id));
+  trazarRuta([objetivo]);
+  setHint(`🚨 Avería en <b>${zona}</b>. Cierra <b>Válvula ${objetivo.nombre}</b> para aislar la zona. Ruta trazada.`);
+}
+
+// Registro
+function abrirRegistro() {
+  capturada = { x: op.x, y: op.y };
+  document.getElementById('modal').classList.add('open');
+}
+function cerrarModal() {
+  document.getElementById('modal').classList.remove('open');
+  ['f_nombre','f_aisla'].forEach(id => document.getElementById(id).value = '');
+}
+function guardar() {
+  const nombre = document.getElementById('f_nombre').value.trim() || 'Nueva';
+  valvulas.push({
+    id: Date.now(), x: capturada.x, y: capturada.y,
+    estado: document.getElementById('f_estado').value,
+    aisla: document.getElementById('f_aisla').value.trim() || nombre,
+    nombre,
+  });
+  dibujarValvulas(); dibujarAverias(); cerrarModal();
+  setHint(`💾 <b>Válvula ${nombre}</b> registrada y guardada. Ya aparece en el mapa.`);
+}
+
+function reset() {
+  valvulas = seed(); moverOperario(200, 230);
+  document.getElementById('ruta').innerHTML = '';
+  dibujarValvulas(); dibujarAverias();
+  setHint('👆 Toca el plano para "moverte": simula tu ubicación GPS.');
+}
+
+// init
+dibujarZonas(); dibujarValvulas(); dibujarAverias();
+</script>
+</body>
+</html>

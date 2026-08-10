@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Llaves de Corte — Lalín · FlowNodo</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet-routing-machine/3.2.12/leaflet-routing-machine.min.css"/>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; }
+  #map { position: absolute; inset: 0; z-index: 1; }
+
+  .topbar {
+    position: absolute; top: 0; left: 0; right: 0; z-index: 1000;
+    background: #0f172a; color: #fff; padding: 10px 12px;
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    box-shadow: 0 2px 8px rgba(0,0,0,.3);
+  }
+  .topbar h1 { font-size: 15px; font-weight: 700; margin-right: auto; }
+  .topbar h1 small { font-weight: 400; opacity: .6; }
+  .search {
+    flex: 1 1 100%; padding: 10px 12px; border: none; border-radius: 8px;
+    font-size: 15px; background: #1e293b; color: #fff;
+  }
+  .search::placeholder { color: #94a3b8; }
+
+  .btnbar {
+    position: absolute; bottom: 0; left: 0; right: 0; z-index: 1000;
+    display: flex; gap: 8px; padding: 10px; background: rgba(15,23,42,.92);
+  }
+  .btn {
+    flex: 1; padding: 14px 8px; border: none; border-radius: 10px;
+    font-size: 14px; font-weight: 600; cursor: pointer; color: #fff;
+  }
+  .btn-main { background: #16a34a; flex: 2; }
+  .btn-sec { background: #334155; }
+
+  .modal-bg {
+    position: absolute; inset: 0; z-index: 2000; background: rgba(0,0,0,.55);
+    display: none; align-items: flex-end; justify-content: center;
+  }
+  .modal-bg.open { display: flex; }
+  .modal {
+    background: #fff; width: 100%; max-width: 480px; border-radius: 16px 16px 0 0;
+    padding: 20px; padding-bottom: 28px;
+  }
+  .modal h2 { font-size: 18px; margin-bottom: 4px; color: #0f172a; }
+  .modal .coords { font-size: 12px; color: #64748b; margin-bottom: 14px; }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 4px; }
+  .field input, .field select {
+    width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 16px;
+  }
+  .modal-btns { display: flex; gap: 8px; margin-top: 8px; }
+
+  .popup-info b { font-size: 15px; }
+  .popup-info .tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; color: #fff; margin: 4px 0; }
+  .tag.abierta { background: #2563eb; }
+  .tag.cerrada { background: #dc2626; }
+  .popup-btn { margin-top: 6px; padding: 8px 12px; border: none; border-radius: 6px; color: #fff; font-size: 13px; cursor: pointer; }
+  .popup-btn.ruta { background: #0f172a; }
+  .popup-btn.del { background: #b91c1c; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div class="topbar">
+  <h1>🔧 Llaves de corte <small>Lalín</small></h1>
+  <input id="search" class="search" placeholder="Buscar avería… ej: Vilanova">
+</div>
+
+<div class="btnbar">
+  <button class="btn btn-main" onclick="registrarAqui()">📍 Registrar válvula aquí</button>
+  <button class="btn btn-sec" onclick="exportar()">⬇︎ Exportar</button>
+  <button class="btn btn-sec" onclick="document.getElementById('file').click()">⬆︎ Importar</button>
+  <input type="file" id="file" accept="application/json" style="display:none" onchange="importar(event)">
+</div>
+
+<div class="modal-bg" id="modal">
+  <div class="modal">
+    <h2>Nueva válvula</h2>
+    <div class="coords" id="modalCoords"></div>
+    <div class="field">
+      <label>Aldea / calle</label>
+      <input id="f_nombre" placeholder="Ej: Vilanova">
+    </div>
+    <div class="field">
+      <label>Estado</label>
+      <select id="f_estado">
+        <option value="abierta">Abierta</option>
+        <option value="cerrada">Cerrada</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>¿Qué aísla? (a dónde corta el agua)</label>
+      <input id="f_aisla" placeholder="Ej: Vilanova">
+    </div>
+    <div class="field">
+      <label>DN (diámetro, opcional)</label>
+      <input id="f_dn" type="number" inputmode="numeric" placeholder="Ej: 100">
+    </div>
+    <div class="modal-btns">
+      <button class="btn btn-sec" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn btn-main" onclick="guardar()">Guardar válvula</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-routing-machine/3.2.12/leaflet-routing-machine.min.js"></script>
+<script>
+const CENTRO = [42.6614, -8.1132];
+const STORAGE_KEY = 'llaves_corte_lalin';
+
+// Datos iniciales (la de Vilanova que ya capturaste)
+const SEED = [
+  { id: 1, nombre: 'Vilanova', lat: 42.615239, lng: -8.135261, diametro: 100, estado: 'cerrada', aisla: 'Vilanova' },
+];
+
+let valvulas = cargar();
+let map, posOperario = null, userMarker = null, routingControl = null, capturada = null;
+const markers = {};
+
+function cargar() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : SEED.slice();
+  } catch { return SEED.slice(); }
+}
+function persistir() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(valvulas)); } catch {}
+}
+
+function initMap() {
+  map = L.map('map').setView(CENTRO, 14);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap', maxZoom: 19,
+  }).addTo(map);
+
+  valvulas.forEach(pintar);
+  if (valvulas.length) {
+    const g = L.featureGroup(Object.values(markers));
+    map.fitBounds(g.getBounds().pad(0.3));
+  }
+
+  // Posición del operario en vivo
+  if (navigator.geolocation) {
+    navigator.geolocation.watchPosition((p) => {
+      posOperario = L.latLng(p.coords.latitude, p.coords.longitude);
+      if (userMarker) userMarker.setLatLng(posOperario);
+      else userMarker = L.circleMarker(posOperario, {
+        radius: 8, color: '#16a34a', fillColor: '#22c55e', fillOpacity: 1, weight: 3,
+      }).addTo(map).bindPopup('Tu posición');
+    }, null, { enableHighAccuracy: true });
+  }
+}
+
+function iconoValvula(estado, resaltada) {
+  const color = estado === 'cerrada' ? '#dc2626' : '#2563eb';
+  const size = resaltada ? 36 : 28;
+  return L.divIcon({
+    className: '',
+    html: `<div style="background:${color};color:#fff;border-radius:50%;
+      width:${size}px;height:${size}px;display:flex;align-items:center;justify-content:center;
+      font-size:${resaltada?18:14}px;border:${resaltada?'3px solid #facc15':'2px solid #fff'};
+      box-shadow:0 1px 5px rgba(0,0,0,.5)">🔧</div>`,
+    iconSize: [size, size], iconAnchor: [size/2, size/2],
+  });
+}
+
+function pintar(v, resaltada = false) {
+  if (markers[v.id]) markers[v.id].remove();
+  const m = L.marker([v.lat, v.lng], { icon: iconoValvula(v.estado, resaltada) }).addTo(map);
+  m.bindPopup(popupHTML(v));
+  m.on('popupopen', (ev) => bindPopup(ev, v));
+  markers[v.id] = m;
+}
+
+function popupHTML(v) {
+  return `<div class="popup-info">
+    <b>Válvula ${v.nombre}</b><br>
+    <span class="tag ${v.estado}">${v.estado.toUpperCase()}</span><br>
+    DN ${v.diametro || '—'}${v.aisla ? ' · Aísla: ' + v.aisla : ''}<br>
+    <button class="popup-btn ruta" data-lat="${v.lat}" data-lng="${v.lng}">🧭 Trazar ruta</button>
+    <button class="popup-btn del" data-id="${v.id}">🗑</button>
+  </div>`;
+}
+
+function bindPopup(ev, v) {
+  const node = ev.popup._contentNode;
+  const rutaBtn = node.querySelector('.ruta');
+  const delBtn = node.querySelector('.del');
+  if (rutaBtn) rutaBtn.onclick = () => trazarRuta(v.lat, v.lng);
+  if (delBtn) delBtn.onclick = () => borrar(v.id);
+}
+
+function trazarRuta(lat, lng) {
+  if (!posOperario) { alert('Aún no tengo tu ubicación GPS. Activa la localización.'); return; }
+  if (routingControl) map.removeControl(routingControl);
+  routingControl = L.Routing.control({
+    waypoints: [posOperario, L.latLng(lat, lng)],
+    router: L.Routing.osrmv1({ serviceUrl: 'https://router.project-osrm.org/route/v1' }), // solo pruebas
+    lineOptions: { styles: [{ color: '#0f172a', weight: 5 }] },
+    createMarker: () => null, addWaypoints: false, fitSelectedRoutes: true, show: false,
+  }).addTo(map);
+}
+
+function registrarAqui() {
+  if (!navigator.geolocation) { alert('Este dispositivo no tiene GPS disponible.'); return; }
+  navigator.geolocation.getCurrentPosition((p) => {
+    capturada = { lat: p.coords.latitude, lng: p.coords.longitude, prec: p.coords.accuracy };
+    document.getElementById('modalCoords').textContent =
+      `Lat ${capturada.lat.toFixed(6)} · Lng ${capturada.lng.toFixed(6)} · ±${Math.round(capturada.prec)} m`;
+    document.getElementById('modal').classList.add('open');
+  }, () => alert('No pude leer el GPS. Activa la ubicación y vuelve a intentarlo.'),
+     { enableHighAccuracy: true });
+}
+
+function guardar() {
+  const nombre = document.getElementById('f_nombre').value.trim() || 'Sin nombre';
+  const nueva = {
+    id: Date.now(),
+    nombre,
+    lat: capturada.lat, lng: capturada.lng,
+    estado: document.getElementById('f_estado').value,
+    aisla: document.getElementById('f_aisla').value.trim(),
+    diametro: document.getElementById('f_dn').value ? Number(document.getElementById('f_dn').value) : null,
+  };
+  valvulas.push(nueva);
+  persistir();
+  pintar(nueva);
+  map.setView([nueva.lat, nueva.lng], 17);
+  cerrarModal();
+}
+
+function cerrarModal() {
+  document.getElementById('modal').classList.remove('open');
+  ['f_nombre','f_aisla','f_dn'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('f_estado').value = 'abierta';
+}
+
+function borrar(id) {
+  if (!confirm('¿Borrar esta válvula?')) return;
+  valvulas = valvulas.filter(v => v.id !== id);
+  persistir();
+  if (markers[id]) { markers[id].remove(); delete markers[id]; }
+}
+
+// Búsqueda: resalta las válvulas que aíslan/pertenecen a la zona buscada
+document.getElementById('search').addEventListener('input', (e) => {
+  const q = e.target.value.trim().toLowerCase();
+  let primera = null;
+  valvulas.forEach(v => {
+    const match = q && (
+      (v.aisla || '').toLowerCase().includes(q) ||
+      (v.nombre || '').toLowerCase().includes(q)
+    );
+    pintar(v, match);
+    if (match && !primera) primera = v;
+  });
+  if (primera) map.setView([primera.lat, primera.lng], 16);
+});
+
+function exportar() {
+  const blob = new Blob([JSON.stringify(valvulas, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'valvulas_lalin.json';
+  a.click();
+}
+
+function importar(ev) {
+  const file = ev.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      if (Array.isArray(data)) {
+        valvulas = data;
+        persistir();
+        Object.values(markers).forEach(m => m.remove());
+        for (const k in markers) delete markers[k];
+        valvulas.forEach(v => pintar(v));
+        alert(`Importadas ${valvulas.length} válvulas.`);
+      }
+    } catch { alert('Archivo JSON no válido.'); }
+  };
+  reader.readAsText(file);
+}
+
+initMap();
+</script>
+</body>
+</html>
