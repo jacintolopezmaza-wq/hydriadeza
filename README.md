@@ -1,4 +1,4 @@
-# hydriadeza· Red de Agua
+# HydriaDeza · Red de Agua
 
 Gestión y maniobras de corte de la red de agua potable. Localiza las llaves de
 corte por aldea/calle y calcula automáticamente qué válvulas cerrar ante una
@@ -7,7 +7,7 @@ avería para aislar el tramo.
 ## Estructura
 
 ```
-flownodo-red/
+hydriadeza/
 ├── backend/            API FastAPI + motor de maniobras de corte
 │   ├── main.py
 │   ├── requirements.txt
