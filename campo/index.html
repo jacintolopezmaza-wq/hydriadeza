@@ -172,6 +172,7 @@ const KEY = 'hydriadeza_valvulas', CFG = 'hydriadeza_cfg';
 const SEED = [{ id:1, nombre:'Vilanova', lat:42.615239, lng:-8.135261, diametro:100, estado:'cerrada', aisla:'Vilanova' }];
 const CFG_DEF = { cota_deposito:500, pmin:25, pmax:50, consigna:35, apiUrl:'' };
 const BAR = 10.2;
+const MATERIALES_VALIDOS = ['pvc', 'polietileno', 'fibrocemento'];
 
 let valvulas = cargar();
 let map, posOperario = null, userMarker = null, routingControl = null, capturada = null;
@@ -193,6 +194,7 @@ function sanitizeValvula(v) {
     estado: v.estado === 'cerrada' ? 'cerrada' : 'abierta',
     aisla: String(v.aisla ?? '').slice(0, 120),
     diametro: v.diametro != null && Number.isFinite(Number(v.diametro)) ? Number(v.diametro) : null,
+    material: MATERIALES_VALIDOS.includes(v.material) ? v.material : null,
     srvId: v.srvId ?? null,
   };
 }
@@ -241,6 +243,9 @@ function ajustarVista() { const ms=Object.values(markers); if (ms.length) map.fi
 function abrirSheet() { document.getElementById('scrim').classList.add('open'); document.getElementById('sheet').classList.add('open'); }
 function cerrarSheet() { document.getElementById('scrim').classList.remove('open'); document.getElementById('sheet').classList.remove('open'); }
 
+function urlGoogleMaps(lat, lng) {
+  return `https://www.google.com/maps/search/?api=1&query=${Number(lat)},${Number(lng)}`;
+}
 function abrirDetalle(v) {
   document.getElementById('sheetBody').innerHTML = `
     <h2>${esc(v.nombre)}</h2>
@@ -249,11 +254,15 @@ function abrirDetalle(v) {
     ${v.srvId ? '<span class="badge srv">Sincronizada</span>' : ''}
     <div class="datagrid">
       <div class="cell"><div class="k">Diámetro</div><div class="v">${v.diametro?'DN '+esc(v.diametro):'—'}</div></div>
-      <div class="cell"><div class="k">Aísla</div><div class="v" style="font-family:var(--sans)">${esc(v.aisla)||'—'}</div></div>
+      <div class="cell"><div class="k">Material</div><div class="v" style="font-family:var(--sans)">${esc(NOMBRE_MATERIAL[v.material])||'—'}</div></div>
+      <div class="cell big"><div class="k">Aísla</div><div class="v" style="font-family:var(--sans)">${esc(v.aisla)||'—'}</div></div>
     </div>
     <div class="sheet-actions">
       <button class="btn btn-danger" onclick="borrar(${Number(v.id)||0})">Borrar</button>
       <button class="btn btn-primary" onclick="trazarRuta(${Number(v.lat)},${Number(v.lng)})">Trazar ruta</button>
+    </div>
+    <div class="sheet-actions">
+      <a class="btn btn-line" style="text-decoration:none" href="${urlGoogleMaps(v.lat,v.lng)}" target="_blank" rel="noopener">Abrir en Google Maps</a>
     </div>`;
   abrirSheet();
 }
@@ -270,7 +279,15 @@ function registrarAqui() {
       <div class="field"><label>Aldea o calle</label><input id="f_nombre" placeholder="Ej: Vilanova" autocomplete="off" maxlength="120"></div>
       <div class="field"><label>Estado</label><select id="f_estado"><option value="abierta">Abierta</option><option value="cerrada">Cerrada</option></select></div>
       <div class="field"><label>¿Qué aísla?</label><input id="f_aisla" placeholder="Zona que se queda sin agua" autocomplete="off" maxlength="120"></div>
-      <div class="field"><label>Diámetro DN (opcional)</label><input id="f_dn" type="number" inputmode="numeric" placeholder="Ej: 100" min="1"></div>
+      <div class="two">
+        <div class="field"><label>Diámetro DN <span class="hint">(opcional)</span></label><input id="f_dn" type="number" inputmode="numeric" placeholder="Ej: 100" min="1"></div>
+        <div class="field"><label>Material <span class="hint">(si se sabe)</span></label><select id="f_material">
+          <option value="">— sin identificar —</option>
+          <option value="pvc">PVC</option>
+          <option value="polietileno">Polietileno</option>
+          <option value="fibrocemento">Fibrocemento</option>
+        </select></div>
+      </div>
       <div class="sheet-actions">
         <button class="btn btn-line" onclick="cerrarSheet()">Cancelar</button>
         <button class="btn btn-primary" onclick="guardar()">Guardar válvula</button>
@@ -282,7 +299,8 @@ async function guardar() {
   const nombre = (document.getElementById('f_nombre').value||'').trim()||'Sin nombre';
   const nueva = sanitizeValvula({ id:Date.now(), nombre, lat:capturada.lat, lng:capturada.lng,
     estado:document.getElementById('f_estado').value, aisla:(document.getElementById('f_aisla').value||'').trim(),
-    diametro:document.getElementById('f_dn').value?Number(document.getElementById('f_dn').value):null });
+    diametro:document.getElementById('f_dn').value?Number(document.getElementById('f_dn').value):null,
+    material:document.getElementById('f_material').value||null });
   valvulas.push(nueva); persistir(); pintar(nueva); map.setView([nueva.lat,nueva.lng],17); cerrarSheet(); toast(`Válvula "${nombre}" registrada`);
 
   const apiUrl = getCfg().apiUrl;
@@ -290,7 +308,7 @@ async function guardar() {
     try {
       const r = await fetch(`${apiUrl}/api/valvulas`, {
         method:'POST', headers:{ 'Content-Type':'application/json' },
-        body: JSON.stringify({ nombre:nueva.nombre, lat:nueva.lat, lng:nueva.lng, estado:nueva.estado, aisla:nueva.aisla||null, diametro:nueva.diametro }),
+        body: JSON.stringify({ nombre:nueva.nombre, lat:nueva.lat, lng:nueva.lng, estado:nueva.estado, aisla:nueva.aisla||null, diametro:nueva.diametro, material:nueva.material }),
       });
       if (r.ok) {
         const data = await r.json();
@@ -338,7 +356,7 @@ async function sincronizar({ silencioso=false } = {}) {
       const p = f.properties || {};
       if (yaSincronizadas.has(p.id)) continue;
       const [lng, lat] = f.geometry.coordinates;
-      valvulas.push(sanitizeValvula({ id:`srv-${p.id}`, nombre:p.nombre, lat, lng, estado:p.estado, aisla:p.aisla, diametro:p.diametro, srvId:p.id }));
+      valvulas.push(sanitizeValvula({ id:`srv-${p.id}`, nombre:p.nombre, lat, lng, estado:p.estado, aisla:p.aisla, diametro:p.diametro, material:p.material, srvId:p.id }));
       nuevas++;
     }
     if (nuevas) { persistir(); valvulas.forEach(v=>pintar(v)); ajustarVista(); }
@@ -362,6 +380,14 @@ async function tuberiaCercana(lat, lng) {
     return r.ok ? await r.json() : null;
   } catch { return null; }
 }
+async function valvulaCercana(lat, lng) {
+  const apiUrl = getCfg().apiUrl;
+  if (!apiUrl) return null;
+  try {
+    const r = await fetch(`${apiUrl}/api/valvulas/cercana?lat=${lat}&lng=${lng}`);
+    return r.ok ? await r.json() : null;
+  } catch { return null; }
+}
 function presionAqui() {
   if (!navigator.geolocation) { toast('Este dispositivo no tiene GPS'); return; }
   toast('Leyendo tu ubicación…');
@@ -371,12 +397,15 @@ function presionAqui() {
     try { cota = await cotaDe(p.coords.latitude, p.coords.longitude); }
     catch { toast('Sin conexión para medir la cota'); return; }
     if (cota == null) { toast('No pude obtener la cota de este punto'); return; }
-    const tuberia = await tuberiaCercana(p.coords.latitude, p.coords.longitude);
-    mostrarPresion(cota, p.coords, tuberia);
+    const [tuberia, valvula] = await Promise.all([
+      tuberiaCercana(p.coords.latitude, p.coords.longitude),
+      valvulaCercana(p.coords.latitude, p.coords.longitude),
+    ]);
+    mostrarPresion(cota, p.coords, tuberia, valvula);
   }, ()=>toast('Activa la ubicación'), { enableHighAccuracy:true });
 }
 const NOMBRE_MATERIAL = { pvc:'PVC', polietileno:'Polietileno', fibrocemento:'Fibrocemento' };
-function mostrarPresion(cota, coords, tuberia) {
+function mostrarPresion(cota, coords, tuberia, valvula) {
   const c = getCfg();
   const P = c.cota_deposito - cota;
   let estado, etiqueta, reco;
@@ -407,21 +436,34 @@ function mostrarPresion(cota, coords, tuberia) {
   }
   cteHtml += `<div class="note">La CTE exige esta presión <b>en el punto de consumo</b> (grifo), no en el suelo: la altura de la vivienda y las pérdidas de su instalación interior restan presión adicional no incluida aquí.</div>`;
 
+  // Referencia de material: se prioriza la válvula documentada más cercana
+  // (dato real, capturado en campo) sobre el tramo del plano (a menudo no
+  // existe o son datos de ejemplo). Si ambas están documentadas, gana la
+  // más próxima al punto.
+  let referencia = null;
+  if (valvula && valvula.material) referencia = { tipo:'valvula', ...valvula };
+  if (tuberia && tuberia.material && (!referencia || tuberia.distancia_m < referencia.distancia_m)) {
+    referencia = { tipo:'tuberia', ...tuberia };
+  }
+
   let materialHtml = '';
-  if (tuberia) {
-    const limite = tuberia.pn_limite_bar;
+  if (referencia) {
+    const limite = referencia.pn_limite_bar;
     const excede = Pbar > limite;
-    const nombreMat = esc(NOMBRE_MATERIAL[tuberia.material] || 'material sin documentar');
+    const nombreMat = esc(NOMBRE_MATERIAL[referencia.material] || 'material sin documentar');
+    const origen = referencia.tipo === 'valvula'
+      ? `Válvula documentada más cercana <b>${esc(referencia.nombre || referencia.id)}</b> (a ${referencia.distancia_m} m)`
+      : `Tramo del plano más cercano <b>${esc(referencia.id)}</b> (a ${referencia.distancia_m} m)`;
     materialHtml = `
       <div class="reco ${excede?'alta':'ok'}">
-        Tubería más cercana <b>${esc(tuberia.id)}</b> (a ${tuberia.distancia_m} m): <b>${nombreMat}</b>,
-        límite <b>PN ${limite} bar</b>${tuberia.pn?'':' (valor por defecto de catálogo, sin PN real documentada)'}.
+        ${origen}: <b>${nombreMat}</b>${referencia.diametro?` DN ${esc(referencia.diametro)}`:''},
+        límite <b>PN ${limite} bar</b> (valor de catálogo por defecto de este material).
         ${excede
-          ? `<br><b>⚠ La presión estática (${Pbar} bar) supera el límite de este material.</b> Riesgo de rotura: valorar una VRP antes de este tramo o confirmar la PN real instalada.`
+          ? `<br><b>⚠ La presión estática (${Pbar} bar) supera el límite de este material.</b> Riesgo de rotura: valorar una VRP antes de este punto o confirmar la PN real instalada.`
           : `La presión estática (${Pbar} bar) está dentro del límite del material.`}
       </div>`;
   } else if (getCfg().apiUrl) {
-    materialHtml = `<div class="note">No se encontró ninguna tubería con material documentado cerca de este punto. Usa <b>Materiales de tuberías</b> en Ajustes para asignarlo.</div>`;
+    materialHtml = `<div class="note">No hay ninguna válvula con material documentado cerca. Cuando registres una junto a esta avería, indica el material y el diámetro que veas en la tubería — no hace falta un plano.</div>`;
   }
 
   document.getElementById('sheetBody').innerHTML = `

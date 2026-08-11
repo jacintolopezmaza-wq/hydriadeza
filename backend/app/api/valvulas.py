@@ -1,5 +1,7 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from ..core.store import cargar_red, guardar_red
+from ..core.geo import distancia_metros
+from ..core.materiales import pn_limite
 from ..models.schemas import ValvulaNueva
 
 router = APIRouter(prefix="/api", tags=["valvulas"])
@@ -19,6 +21,7 @@ def listar_valvulas():
                     "id": v["id"], "nombre": v.get("nombre", v["id"]),
                     "estado": v["estado"], "tuberia": v.get("tuberia"), "nodo": v.get("nodo"),
                     "aisla": v.get("aisla"), "diametro": v.get("diametro"),
+                    "material": v.get("material"),
                 },
             }
             for v in red["valvulas"]
@@ -43,7 +46,7 @@ def crear_valvula(v: ValvulaNueva):
     red["valvulas"].append({
         "id": nuevo_id, "tuberia": v.tuberia, "nodo": v.nodo,
         "estado": v.estado, "nombre": v.nombre, "lat": v.lat, "lng": v.lng,
-        "aisla": v.aisla, "diametro": v.diametro,
+        "aisla": v.aisla, "diametro": v.diametro, "material": v.material,
     })
     guardar_red(red)
     return {"ok": True, "id": nuevo_id}
@@ -59,3 +62,23 @@ def borrar_valvula(valvula_id: str):
         raise HTTPException(404, f"Válvula {valvula_id} no existe")
     guardar_red(red)
     return {"ok": True}
+
+
+@router.get("/valvulas/cercana")
+def valvula_cercana(lat: float = Query(...), lng: float = Query(...)):
+    """Válvula documentada (con material conocido) más próxima a un punto.
+
+    A diferencia de /tuberias/cercana, esto no depende de tener un plano de
+    red: solo de las válvulas que ya se han capturado en campo con su
+    material, que es el dato real disponible cuando no hay planos."""
+    red = cargar_red()
+    candidatas = [v for v in red["valvulas"] if v.get("material")]
+    if not candidatas:
+        raise HTTPException(404, "No hay válvulas con material documentado")
+    mejor = min(candidatas, key=lambda v: distancia_metros(lat, lng, v["lat"], v["lng"]))
+    return {
+        "id": mejor["id"], "nombre": mejor.get("nombre"),
+        "material": mejor.get("material"), "diametro": mejor.get("diametro"),
+        "pn_limite_bar": pn_limite(mejor.get("material"), None),
+        "distancia_m": round(distancia_metros(lat, lng, mejor["lat"], mejor["lng"])),
+    }

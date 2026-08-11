@@ -1,6 +1,8 @@
 from pydantic import BaseModel, Field, field_validator
 from typing import Literal, Optional
 
+Material = Literal["pvc", "polietileno", "fibrocemento"]
+
 
 class ValvulaNueva(BaseModel):
     nombre: str = Field(min_length=1, max_length=120)
@@ -13,6 +15,9 @@ class ValvulaNueva(BaseModel):
     nodo: Optional[str] = None
     aisla: Optional[str] = Field(default=None, max_length=120)
     diametro: Optional[float] = Field(default=None, gt=0)
+    # Material de la tubería en ese punto, tal como se conoce en campo
+    # (a menudo no hay plano, pero sí se sabe el tipo y la medida).
+    material: Optional[Material] = None
 
     @field_validator("nombre", "aisla", "tuberia", "nodo")
     @classmethod
@@ -22,9 +27,6 @@ class ValvulaNueva(BaseModel):
 
 class AveriaRequest(BaseModel):
     tuberia_averiada: str = Field(min_length=1)
-
-
-Material = Literal["pvc", "polietileno", "fibrocemento"]
 
 
 class TuberiaMaterial(BaseModel):

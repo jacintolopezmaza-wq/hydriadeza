@@ -20,6 +20,12 @@ def _dist_punto_segmento(px, py, ax, ay, bx, by):
     return math.hypot(px - (ax + t * dx), py - (ay + t * dy))
 
 
+def distancia_metros(lat1, lng1, lat2, lng2):
+    x1, y1 = _a_metros(lat1, lng1, lat1)
+    x2, y2 = _a_metros(lat2, lng2, lat1)
+    return math.hypot(x2 - x1, y2 - y1)
+
+
 def tuberia_mas_cercana(lat, lng, nodos, tuberias):
     """Devuelve (tuberia, distancia_m) del tramo cuyo trazado (segmento
     recto entre sus dos nodos) está más cerca del punto dado."""

@@ -7,7 +7,10 @@
   llevan `material` (`pvc` | `polietileno` | `fibrocemento`) y `pn` (presión
   nominal real en bar, si se conoce). Ver [Presión máxima por material](#presión-máxima-por-material).
 - **Válvulas**: cada una situada en un extremo de una tubería, junto a un nodo
-  (`tuberia` + `nodo`). Es lo que define dónde se puede cortar.
+  (`tuberia` + `nodo`). Es lo que define dónde se puede cortar. `tuberia`/`nodo`
+  son opcionales: la mayoría de averías se capturan sin plano de red, así que
+  la válvula también puede llevar directamente su propio `material` y
+  `diametro`, tal como se observan en el punto de la avería.
 
 ## Segmentos
 
@@ -33,26 +36,30 @@ Ante una avería en una tubería:
 
 ## Presión máxima por material
 
-Cada tramo puede tener asignado un `material` y, si se conoce, su `pn` real
-(presión nominal en bar marcada en la tubería). El límite de presión que se
-compara contra la presión estática calculada en un punto (`app/core/materiales.py`)
-es:
+El límite de presión que se compara contra la presión estática calculada en
+un punto (`app/core/materiales.py`) es, en orden de preferencia:
 
-1. La `pn` real del tramo, si está documentada.
+1. La `pn` real documentada, si se conoce.
 2. Si no, la clase mínima habitual del material (norma UNE-EN, valores de
    catálogo genéricos, no específicos de esta instalación):
    - PVC (UNE-EN 1452): PN6
    - Polietileno (UNE-EN 12201): PN6
    - Fibrocemento (UNE 88201): Clase A ≈ 5 bar
-3. Si el tramo no tiene material asignado: 5 bar (el límite más restrictivo
-   conocido), para no dar una falsa sensación de seguridad.
+3. Si no hay ningún material documentado cerca: 5 bar (el límite más
+   restrictivo conocido), para no dar una falsa sensación de seguridad.
 
-Editar el material de un tramo: `PATCH /api/tuberias/{id}` con
-`{"material": "...", "pn": <bar o null>}`. Consultar el tramo más cercano a un
-punto (para comparar su límite contra la presión estática ahí calculada):
-`GET /api/tuberias/cercana?lat=..&lng=..`. La app de campo usa este segundo
-endpoint automáticamente dentro de "Presión aquí" cuando hay backend
-configurado, y expone el editor en Ajustes → *Materiales de tuberías*.
+Hay dos fuentes posibles de material, y "Presión aquí" usa **la más cercana
+de las dos, priorizando siempre la válvula sobre el tramo del plano** (la
+válvula es el dato real que se captura en campo; el plano de tuberías rara
+vez existe):
+
+- **Por válvula** (caso normal, sin plano): cada válvula puede llevar su
+  propio `material`/`diametro`, capturados directamente al registrarla.
+  Consultar la más cercana a un punto: `GET /api/valvulas/cercana?lat=..&lng=..`.
+- **Por tramo del plano** (solo si existe topología real, p. ej. importada
+  de EPANET): `PATCH /api/tuberias/{id}` con `{"material": "...", "pn": <bar o null>}`,
+  y `GET /api/tuberias/cercana?lat=..&lng=..` para consultar el tramo más
+  cercano. Editor en Ajustes → *Materiales de tuberías*.
 
 ## Presión mínima/máxima para vivienda (CTE DB-HS4)
 
